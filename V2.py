@@ -126,13 +126,95 @@ class BRDInput:
         self.prompt = prompt
         self.template = template
         self.support_documents = support_documents
+class RewordSummaryAgent:
+    def split_text_into_chunks(self, text: str, max_length: int = 3000) -> List[str]:
+        lines = text.split('\n')
+        chunks = []
+        current_chunk = ""
+        for line in lines:
+            if len(current_chunk) + len(line) < max_length:
+                current_chunk += line + "\n"
+            else:
+                chunks.append(current_chunk.strip())
+                current_chunk = line + "\n"
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        return chunks
+
+    def process(self, brd_input: BRDInput) -> str:
+        combined_summaries = []
+
+        for doc in brd_input.support_documents:
+            try:
+                text = doc.file_content.decode("utf-8", errors="ignore")
+            except Exception as e:
+                continue
+
+            chunks = self.split_text_into_chunks(text)
+            for chunk in chunks:
+                prompt = f"""
+                You are a professional business analyst. Summarize the following chunk of a document:
+
+                {chunk}
+
+                 Based on this analysis, create a comprehensive, concise and structured writeup. 
+                This writeup will serve as input notes for the detailed preparation of a Business Requirements Document (BRD). 
+                Ensure that your writeup captures all key points, decisions, and action items relevant to the project or business process.
+
+        
+                Your task is to generate a JSON object with the following structure:
+                {{
+          "title": "One line title summarizing the main topic",
+          "description": "A brif writeup"
+        }}
+
+        Guidelines for the response:
+        1. The response must be a valid JSON object.
+        2. Do not include any text before or after the JSON object.
+        3. The "title" should be a concise, one-line summary.
+        4. The "description" should be extensive, typically several paragraphs long, covering all aspects of the analyzed content in detail.
+        5. Include all key points, decisions, action items, and relevant information from the document in the description.
+        6. Ensure proper JSON formatting, including using double quotes for strings and escaping any special characters.
+
+        Remember, your entire response should be a single, valid JSON object.
+
+                """
+                try:
+                    response = groq_client.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt}],
+                        model="llama3-70b-8192"
+                    )
+                    summary = json.loads(response.choices[0].message.content)
+                    combined_summaries.append(summary)
+                except Exception as e:
+                    logger.warning(f"Skipping chunk due to error: {e}")
+                    continue
+
+        if not combined_summaries:
+            return json.dumps({
+                "title": "Unable to summarize document",
+                "description": "No valid chunks were processed"
+            })
+
+        final_title = combined_summaries[0]["title"]
+        final_description = "\n\n".join([s["description"] for s in combined_summaries])
+
+        return json.dumps({
+            "title": final_title,
+            "description": final_description
+        })
 
 class RewordSummaryAgent:
     def process(self, brd_input: BRDInput) -> str:
+        combined_docs = "\n\n".join([
+            f"Document ({doc.document_type}):\n{doc.file_content.decode('utf-8', errors='ignore')}"
+            for doc in brd_input.support_documents
+            ])
+        
         prompt = f"""
         You are an expert Business Analyst. 
         Your task is to carefully analyze the provided content, 
-        which may include email chains, meeting notes, or transcriptions. 
+        {combined_docs}
         Based on this analysis, create a comprehensive, concise and structured writeup. 
         This writeup will serve as input notes for the detailed preparation of a Business Requirements Document (BRD). 
         Ensure that your writeup captures all key points, decisions, and action items relevant to the project or business process.

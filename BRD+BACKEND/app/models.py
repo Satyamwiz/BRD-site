@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, ForeignKey, Table, LargeBinary
 from sqlalchemy.orm import relationship
 from app.database import Base
 from sqlalchemy import Text
@@ -33,7 +33,6 @@ class Project(Base):
     description = Column(Text)
     group_id = Column(Integer, ForeignKey("groups.id"))
     created_by = Column(Integer, ForeignKey("users.id"))
-    
     group = relationship("Group")
     creator = relationship("User")
 

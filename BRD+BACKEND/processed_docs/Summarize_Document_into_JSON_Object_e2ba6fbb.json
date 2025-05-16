@@ -1,0 +1,4 @@
+{
+  "title": "Summarize Document into JSON Object",
+  "description": "The task requires analyzing the provided content and generating a JSON object with a concise title and an extensive description. The title should be a one-line summary, while the description should be several paragraphs long, covering all key points, decisions, and action items. The response must be a valid JSON object with proper formatting, including double quotes for strings and special characters. The guidelines provided must be followed to ensure a comprehensive and structured write-up, serving as input notes for the detailed preparation of a Business Requirements Document (BRD)."
+}

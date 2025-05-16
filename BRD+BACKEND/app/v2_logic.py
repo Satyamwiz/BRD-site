@@ -29,41 +29,117 @@ class BRDInput:
         self.prompt = prompt
         self.template = template
         self.support_documents = support_documents
-
 class RewordSummaryAgent:
+    def split_text_into_chunks(self, text: str, max_length: int = 3000) -> List[str]:
+        lines = text.split('\n')
+        chunks = []
+        current_chunk = ""
+        for line in lines:
+            if len(current_chunk) + len(line) < max_length:
+                current_chunk += line + "\n"
+            else:
+                chunks.append(current_chunk.strip())
+                current_chunk = line + "\n"
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        return chunks
+
     def process(self, brd_input: BRDInput) -> str:
-        prompt = f"""
-        You are an expert Business Analyst. 
-        Your task is to carefully analyze the provided content, 
-        which may include email chains, meeting notes, or transcriptions. 
-        Based on this analysis, create a comprehensive, concise and structured writeup. 
-        This writeup will serve as input notes for the detailed preparation of a Business Requirements Document (BRD). 
-        Ensure that your writeup captures all key points, decisions, and action items relevant to the project or business process.
+        combined_summaries = []
 
-        {brd_input.prompt}
-        Your task is to generate a JSON object with the following structure:
-        {{
-          "title": "One line title summarizing the main topic",
-          "description": "A brif writeup"
-        }}
+        for doc in brd_input.support_documents:
+            try:
+                text = doc.file_content.decode("utf-8", errors="ignore")
+            except Exception as e:
+                print(f"[Decode Error] {e}")
+                continue
 
-        Guidelines for the response:
-        1. The response must be a valid JSON object.
-        2. Do not include any text before or after the JSON object.
-        3. The "title" should be a concise, one-line summary.
-        4. The "description" should be extensive, typically several paragraphs long, covering all aspects of the analyzed content in detail.
-        5. Include all key points, decisions, action items, and relevant information from the document in the description.
-        6. Ensure proper JSON formatting, including using double quotes for strings and escaping any special characters.
+            chunks = self.split_text_into_chunks(text)
+            total_chunks = len(chunks)
 
-        Remember, your entire response should be a single, valid JSON object.
+            for i, chunk in enumerate(chunks):
+                prompt = f"""
+                You are an expert Business Analyst. 
+                Your task is to carefully analyze the provided content,
+                below is chunk {i+1} out of {total_chunks} from document type: {doc.document_type}.
 
-        """
-        response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama3-70b-8192",
-        )
-        return response.choices[0].message.content
-    
+                {chunk}
+
+                Based on this analysis, create a comprehensive, concise and structured writeup. 
+                This writeup will serve as input notes for the detailed preparation of a Business Requirements Document (BRD). 
+                Ensure that your writeup captures all key points, decisions, and action items relevant to the project or business process.
+
+                {brd_input.prompt}
+
+                Your task is to generate a JSON object with the following structure:
+                {{
+                  "title": "One line title summarizing the main topic",
+                  "description": "A brif writeup"
+                }}
+
+                Guidelines for the response:
+                1. The response must be a valid JSON object.
+                2. Do not include any text before or after the JSON object.
+                3. The "title" should be a concise, one-line summary.
+                4. The "description" should be extensive, typically several paragraphs long, covering all aspects of the analyzed content in detail.
+                5. Include all key points, decisions, action items, and relevant information from the document in the description.
+                6. Ensure proper JSON formatting, including using double quotes for strings and escaping any special characters.
+
+                Remember, your entire response should be a single, valid JSON object.
+                """
+
+                try:
+                    response = groq_client.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt}],
+                        model="llama3-70b-8192"
+                    )
+                    raw_output = response.choices[0].message.content.strip()
+
+                    try:
+                        # First attempt to parse directly
+                        summary = json.loads(raw_output)
+                    except json.JSONDecodeError:
+                        print(f"[Warning] JSON parsing failed. Trying to clean response.")
+                        start = raw_output.find("{")
+                        end = raw_output.rfind("}")
+                        if start != -1 and end != -1 and end > start:
+                            cleaned = raw_output[start:end+1].strip()
+                            try:
+                                summary = json.loads(cleaned)
+                            except Exception as e2:
+                                print(f"[Final Fail] Cleaned JSON still failed:\n{cleaned}")
+                                print(f"Error: {e2}")
+                                continue
+                        else:
+                            print(f"[Critical] Could not find JSON block in chunk {i+1}/{total_chunks}")
+                            continue
+
+                    summary["chunk_number"] = i + 1
+                    summary["total_chunks"] = total_chunks
+                    combined_summaries.append(summary)
+
+                except Exception as e:
+                    print(f"[Chunk {i+1}/{total_chunks}] Unexpected error: {e}")
+                    continue
+
+        if not combined_summaries:
+            return json.dumps({
+                "title": "Unable to summarize document",
+                "description": "No valid chunks were processed"
+            })
+
+        final_title = combined_summaries[0]["title"]
+        full_description = "\n\n".join([
+            f"(Chunk {s['chunk_number']} of {s['total_chunks']}):\n{s['description']}"
+            for s in combined_summaries
+        ])
+
+        return json.dumps({
+            "title": final_title,
+            "description": full_description
+        })
+
+
 class BRDCompletionAgent:
     def ensure_string(self, data: Union[str, bytes]) -> str:
         if isinstance(data, bytes):
@@ -253,7 +329,9 @@ def create_brd_word_document(brd_content: str, output_path: str):
 def process_single_document(file_content: bytes, description: str, document_type: str, session_folder: str) -> Dict[str, Any]:
     reword_agent = RewordSummaryAgent()
     support_doc = SupportDocument(file_content, description, document_type)
-    brd_input = BRDInput(prompt=f"Summarize the following document: {description}", template=b"", support_documents=[support_doc])
+    print("support_doc", support_doc)
+    print("file_content", file_content)
+    brd_input = BRDInput(prompt=f"Summarize the following document: description as{description}", template=b"", support_documents=[support_doc])
 
     try:
         reworded_summary = reword_agent.process(brd_input)

@@ -30,15 +30,15 @@ def join_group(group_id: int, db: Session = Depends(auth.get_db), current_user: 
 def my_groups(db: Session = Depends(auth.get_db), current_user: models.User = Depends(auth.get_current_user)):
     return current_user.groups
 
-
-@router.delete("/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(auth.get_db), current_user: models.User = Depends(auth.get_current_user)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.created_by != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this project")
-
-    db.delete(project)
+@router.delete("/{group_id}")
+def delete_group(group_id: int, db: Session = Depends(auth.get_db), current_user: models.User = Depends(auth.get_current_user)):
+    group = db.query(models.Group).filter(models.Group.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    if group.created_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the group creator can delete this group")
+    
+    db.delete(group)
     db.commit()
-    return {"message": "Project deleted successfully"}
+    return {"message": "Group deleted successfully"}
+

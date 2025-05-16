@@ -26,7 +26,6 @@ async def generate_initial_brd(
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
     if current_user not in project.group.members:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -36,9 +35,16 @@ async def generate_initial_brd(
         for doc in docs
     ])
 
+    template_bytes = await template.read() if template else b""
+
+    # Store template and prompt for reuse in final
+    project.prompt = prompt
+    project.template_bytes = template_bytes
+    db.commit()
+
     brd_input = BRDInput(
         prompt=f"{prompt}\n\nAnalyze the following summaries:\n{combined_summary}",
-        template=await template.read(),
+        template=template_bytes,
         support_documents=[]
     )
 
@@ -49,13 +55,12 @@ async def generate_initial_brd(
         "completion_suggestions": result["completion_suggestions"],
         "brd_draft": result["brd_draft"]
     }
-
 @router.post("/generate-final")
 async def generate_brd_final(
     project_id: int = Form(...),
     prompt: str = Form(...),
     completion_answers: Optional[str] = Form("{}"),
-    template: UploadFile = File(...),
+    template: Optional[UploadFile] = File(None),  # Optional to allow reuse of previously uploaded
     db: Session = Depends(auth.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
@@ -66,15 +71,19 @@ async def generate_brd_final(
     if current_user not in project.group.members:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # Collect previously uploaded document summaries
     docs = db.query(models.Document).filter(models.Document.project_id == project_id).all()
     combined_summary = "\n\n".join([
         f"Document: {doc.summary_title or doc.filename}\n{doc.summary_description or ''}"
         for doc in docs
     ])
 
+    # Read template if provided
+    template_bytes = await template.read() if template else b""
+
     brd_input = BRDInput(
         prompt=f"{prompt}\n\nAnalyze the following summaries:\n{combined_summary}",
-        template=await template.read(),
+        template=template_bytes,
         support_documents=[]
     )
 
@@ -88,7 +97,7 @@ async def generate_brd_final(
         "brd_document": final_result["brd_document"],
         "review_feedback": final_result["review_feedback"]
     }
-
+    
 @router.get("/download")
 def download_brd_docx(
     project_id: int,
