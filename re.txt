@@ -1,0 +1,6 @@
+groq
+streamlit
+python-docx
+beautifulsoup4
+requests
+markdown

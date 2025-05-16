@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+pydantic
+aiofiles
+python-multipart
+psycopg2-binary
+pydantic[email]
+beautifulsoup4
+exceptions
+python-docx
+requests
+python-multipart
+groq

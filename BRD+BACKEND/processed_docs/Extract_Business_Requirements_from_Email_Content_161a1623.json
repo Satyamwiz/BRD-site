@@ -1,0 +1,4 @@
+{
+  "title": "Extract Business Requirements from Email Content",
+  "description": "Analyze email content to create a structured writeup for a Business Requirements Document (BRD), following guidelines for a valid JSON object response."
+}
